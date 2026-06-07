@@ -12,7 +12,7 @@ id KeyWindow(void);
 id KeyWindowRootViewController(void);
 id SharedNSApplication(void);
 const char *ClassName(id obj);
-bool KeyWindowCenterInQuartzCoordinates(BridgeCGPoint *point);
+bool KeyWindowCenterInQuartzCoordinates(BridgeCGPoint *point, const char **source);
 void SetPointerCaptureActive(bool active, const char *reason);
 bool SharesTargetWindow(id controller);
 id PointerLockSourceController(id controller);

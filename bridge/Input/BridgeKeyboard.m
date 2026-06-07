@@ -1,5 +1,7 @@
 #import "../BridgeInternal.h"
 
+static bool gNativeKeyChangedMediatedLogged = false;
+
 id ButtonForKeyCode(unsigned short keyCode) {
     if (gKeyboardInput == nil) {
         return nil;
@@ -565,11 +567,47 @@ void ReplacementPressesCancelled(id self, SEL _cmd, id presses, id event) {
 
 void ReplacementSetKeyChangedHandler(id self, SEL _cmd, id block) {
     gKeyboardInput = self;
-    gKeyChangedHandler = block == nil ? nil : [block copy];
+    void (^originalBlock)(id keyboardInput, id key, unsigned short keyCode, BOOL pressed) = block == nil ? nil : [block copy];
+    gKeyChangedHandler = originalBlock;
     BridgeLog("captured keyChangedHandler input=%p block=%p", (__bridge void *)self, (__bridge void *)block);
+
+    id replacement = nil;
+    if (originalBlock != nil) {
+        replacement = [^void(id keyboardInput, id key, unsigned short keyCode, BOOL pressed) {
+            if (keyCode == 0 || keyCode > UINT16_MAX) {
+                originalBlock(keyboardInput, key, keyCode, pressed);
+                return;
+            }
+
+            gKeyboardInput = keyboardInput;
+            if (!gNativeKeyChangedMediatedLogged) {
+                BridgeLog("native keyChanged mediated input=%p keyCode=%u pressed=%d menu=%d hudEditor=%d",
+                          (__bridge void *)keyboardInput,
+                          keyCode,
+                          pressed ? 1 : 0,
+                          gBridgeMenuVisible ? 1 : 0,
+                          gBridgeHUDEditorActive ? 1 : 0);
+                gNativeKeyChangedMediatedLogged = true;
+            }
+            if (gBridgeMenuVisible || gBridgeHUDEditorActive || gSuppressedKeys[keyCode]) {
+                BridgeLog("native keyChanged routed through bridge ui keyCode=%u pressed=%d menu=%d hudEditor=%d suppressed=%d",
+                          keyCode,
+                          pressed ? 1 : 0,
+                          gBridgeMenuVisible ? 1 : 0,
+                          gBridgeHUDEditorActive ? 1 : 0,
+                          gSuppressedKeys[keyCode] ? 1 : 0);
+            }
+
+            if (pressed) {
+                PressKeyCode(keyCode);
+            } else {
+                ReleaseKeyCode(keyCode, "native-keyChanged");
+            }
+        } copy];
+    }
 
     IMP original = OriginalFor(self, _cmd);
     if (original != NULL) {
-        ((void (*)(id, SEL, id))original)(self, _cmd, block);
+        ((void (*)(id, SEL, id))original)(self, _cmd, replacement);
     }
 }

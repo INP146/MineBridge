@@ -112,21 +112,10 @@ const char *ClassName(id obj) {
     return obj == nil ? "<nil>" : class_getName(object_getClass(obj));
 }
 
-bool KeyWindowCenterInQuartzCoordinates(BridgeCGPoint *point) {
+bool CenterPointForCocoaWindowFrame(BridgeCGRect windowFrame, BridgeCGPoint *point) {
     if (point == NULL || gCGMainDisplayID == NULL || gCGDisplayBounds == NULL) {
         return false;
     }
-
-    id nsApplication = SharedNSApplication();
-    id nsWindow = ObjectValue(nsApplication, "keyWindow");
-    if (nsWindow == nil) {
-        nsWindow = ObjectValue(nsApplication, "mainWindow");
-    }
-    if (nsWindow == nil || !RespondsTo(nsWindow, sel_registerName("frame"))) {
-        return false;
-    }
-
-    BridgeCGRect windowFrame = ((BridgeCGRect (*)(id, SEL))objc_msgSend)(nsWindow, sel_registerName("frame"));
     if (windowFrame.size.width <= 0.0 || windowFrame.size.height <= 0.0) {
         return false;
     }
@@ -138,6 +127,85 @@ bool KeyWindowCenterInQuartzCoordinates(BridgeCGPoint *point) {
     point->x = cocoaX;
     point->y = displayBounds.origin.y + displayBounds.size.height - cocoaY;
     return true;
+}
+
+bool WindowFrame(id nsWindow, BridgeCGRect *frame) {
+    if (frame == NULL || nsWindow == nil || !RespondsTo(nsWindow, sel_registerName("frame"))) {
+        return false;
+    }
+    BridgeCGRect windowFrame = ((BridgeCGRect (*)(id, SEL))objc_msgSend)(nsWindow, sel_registerName("frame"));
+    if (windowFrame.size.width <= 0.0 || windowFrame.size.height <= 0.0) {
+        return false;
+    }
+    *frame = windowFrame;
+    return true;
+}
+
+bool LargestApplicationWindowFrame(BridgeCGRect *frame) {
+    if (frame == NULL) {
+        return false;
+    }
+
+    id nsApplication = SharedNSApplication();
+    id windows = ObjectValue(nsApplication, "windows");
+    unsigned long count = ULongValue(windows, "count");
+    bool found = false;
+    double bestArea = 0.0;
+    BridgeCGRect bestFrame = { { 0.0, 0.0 }, { 0.0, 0.0 } };
+
+    for (unsigned long i = 0; i < count; i++) {
+        id window = ((id (*)(id, SEL, unsigned long))objc_msgSend)(windows, @selector(objectAtIndex:), i);
+        BridgeCGRect candidate = { { 0.0, 0.0 }, { 0.0, 0.0 } };
+        if (!WindowFrame(window, &candidate)) {
+            continue;
+        }
+
+        double area = candidate.size.width * candidate.size.height;
+        if (!found || area > bestArea) {
+            found = true;
+            bestArea = area;
+            bestFrame = candidate;
+        }
+    }
+
+    if (!found) {
+        return false;
+    }
+
+    *frame = bestFrame;
+    return true;
+}
+
+bool KeyWindowCenterInQuartzCoordinates(BridgeCGPoint *point, const char **source) {
+    if (source != NULL) {
+        *source = "none";
+    }
+
+    id nsApplication = SharedNSApplication();
+    BridgeCGRect windowFrame = { { 0.0, 0.0 }, { 0.0, 0.0 } };
+    if (WindowFrame(ObjectValue(nsApplication, "keyWindow"), &windowFrame) &&
+        CenterPointForCocoaWindowFrame(windowFrame, point)) {
+        if (source != NULL) {
+            *source = "ns-key";
+        }
+        return true;
+    }
+    if (WindowFrame(ObjectValue(nsApplication, "mainWindow"), &windowFrame) &&
+        CenterPointForCocoaWindowFrame(windowFrame, point)) {
+        if (source != NULL) {
+            *source = "ns-main";
+        }
+        return true;
+    }
+    if (LargestApplicationWindowFrame(&windowFrame) &&
+        CenterPointForCocoaWindowFrame(windowFrame, point)) {
+        if (source != NULL) {
+            *source = "ns-windows";
+        }
+        return true;
+    }
+
+    return false;
 }
 
 void SetPointerCaptureActive(bool active, const char *reason) {
@@ -157,7 +225,8 @@ void SetPointerCaptureActive(bool active, const char *reason) {
     uint32_t display = gCGMainDisplayID == NULL ? 0 : gCGMainDisplayID();
     if (active) {
         BridgeCGPoint center = { 0.0, 0.0 };
-        bool hasCenter = KeyWindowCenterInQuartzCoordinates(&center);
+        const char *centerSource = "none";
+        bool hasCenter = KeyWindowCenterInQuartzCoordinates(&center, &centerSource);
         int32_t warpError = -1;
         if (hasCenter && gCGWarpMouseCursorPosition != NULL) {
             warpError = gCGWarpMouseCursorPosition(center);
@@ -174,11 +243,12 @@ void SetPointerCaptureActive(bool active, const char *reason) {
         }
 
         gPointerCaptureActive = associateError == 0;
-        BridgeLog("pointer capture enable reason=%s active=%d display=%u hasCenter=%d centerX=%.1f centerY=%.1f warpError=%d associateError=%d hideError=%d",
+        BridgeLog("pointer capture enable reason=%s active=%d display=%u hasCenter=%d centerSource=%s centerX=%.1f centerY=%.1f warpError=%d associateError=%d hideError=%d",
                   reason == NULL ? "<nil>" : reason,
                   gPointerCaptureActive ? 1 : 0,
                   display,
                   hasCenter ? 1 : 0,
+                  centerSource == NULL ? "<nil>" : centerSource,
                   center.x,
                   center.y,
                   warpError,
