@@ -2,6 +2,12 @@
 
 static bool ShouldSuppressMouseButtonInput(int buttonIndex, bool pressed, const char *source);
 
+static void BridgeHUDRefreshForMouseButtonIfNeeded(int buttonIndex) {
+    if (gBridgeHUDKeystrokesEnabled && (buttonIndex == 0 || buttonIndex == 1)) {
+        BridgeHUDRefresh();
+    }
+}
+
 void EmitScrollInput(float xValue,
                             float yValue,
                             int64_t lineX,
@@ -253,6 +259,7 @@ poll_buttons:
         }
 
         gMouseButtonStates[button] = pressed;
+        BridgeHUDRefreshForMouseButtonIfNeeded(button);
         if (ShouldSuppressMouseButtonInput(button, pressed, "synthetic button")) {
             if (!pressed) {
                 gMouseButtonSuppressedByBridgeUI[button] = false;
@@ -358,6 +365,7 @@ void BridgeSuppressActiveMouseButtonsForUI(const char *reason) {
                   physicallyDown ? 1 : 0,
                   reason == NULL ? "<nil>" : reason);
         EmitMouseButtonInput(button, false, reason);
+        BridgeHUDRefreshForMouseButtonIfNeeded(button);
     }
 }
 
@@ -467,6 +475,7 @@ void ReplacementSetPressedChangedHandler(id self, SEL _cmd, id block) {
             int index = MouseButtonIndex(buttonInput);
             if (index >= 0) {
                 gMouseButtonStates[index] = pressed;
+                BridgeHUDRefreshForMouseButtonIfNeeded(index);
             }
             if (ShouldSuppressMouseButtonInput(index, pressed, "native buttonPressed")) {
                 return;
@@ -505,6 +514,7 @@ void ReplacementSetValueChangedHandler(id self, SEL _cmd, id block) {
             int index = MouseButtonIndex(buttonInput);
             if (index >= 0) {
                 gMouseButtonStates[index] = pressed;
+                BridgeHUDRefreshForMouseButtonIfNeeded(index);
             }
             if (ShouldSuppressMouseButtonInput(index, pressed, "native buttonValue")) {
                 return;
@@ -543,6 +553,7 @@ void ReplacementSetTouchedChangedHandler(id self, SEL _cmd, id block) {
             int index = MouseButtonIndex(buttonInput);
             if (index >= 0) {
                 gMouseButtonStates[index] = pressed;
+                BridgeHUDRefreshForMouseButtonIfNeeded(index);
             }
             if (ShouldSuppressMouseButtonInput(index, pressed, "native buttonTouch")) {
                 return;

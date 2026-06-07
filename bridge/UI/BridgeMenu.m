@@ -167,6 +167,9 @@ void BridgeRefreshSprintMenuButtons(void) {
     if (gBridgeHUDSprintStatusButton != nil) {
         BridgeSetButtonTitle(gBridgeHUDSprintStatusButton, gBridgeHUDSprintStatusEnabled ? "开启" : "关闭");
     }
+    if (gBridgeHUDKeystrokesButton != nil) {
+        BridgeSetButtonTitle(gBridgeHUDKeystrokesButton, gBridgeHUDKeystrokesEnabled ? "开启" : "关闭");
+    }
     if (gBridgeHUDSettingsButton != nil) {
         BridgeSetButtonTitle(gBridgeHUDSettingsButton, "设置");
     }
@@ -189,6 +192,12 @@ void BridgeMenuHUDTapped(id self, SEL _cmd, id sender) {
 
 void BridgeMenuHUDSprintStatusTapped(id self, SEL _cmd, id sender) {
     BridgeSettingsSaveHUDSprintStatusEnabled(!gBridgeHUDSprintStatusEnabled);
+    BridgeRefreshSprintMenuButtons();
+    BridgeHUDRefresh();
+}
+
+void BridgeMenuHUDKeystrokesTapped(id self, SEL _cmd, id sender) {
+    BridgeSettingsSaveHUDKeystrokesEnabled(!gBridgeHUDKeystrokesEnabled);
     BridgeRefreshSprintMenuButtons();
     BridgeHUDRefresh();
 }
@@ -243,6 +252,7 @@ id BridgeMenuActionTarget(void) {
         if (cls != Nil) {
             class_addMethod(cls, sel_registerName("bridgeHUDTapped:"), (IMP)BridgeMenuHUDTapped, "v@:@");
             class_addMethod(cls, sel_registerName("bridgeHUDSprintStatusTapped:"), (IMP)BridgeMenuHUDSprintStatusTapped, "v@:@");
+            class_addMethod(cls, sel_registerName("bridgeHUDKeystrokesTapped:"), (IMP)BridgeMenuHUDKeystrokesTapped, "v@:@");
             class_addMethod(cls, sel_registerName("bridgeHUDSettingsTapped:"), (IMP)BridgeMenuHUDSettingsTapped, "v@:@");
             class_addMethod(cls, sel_registerName("bridgeSprintModeTapped:"), (IMP)BridgeMenuSprintModeTapped, "v@:@");
             class_addMethod(cls, sel_registerName("bridgeSprintKeyTapped:"), (IMP)BridgeMenuSprintKeyTapped, "v@:@");
@@ -471,7 +481,7 @@ void ShowBridgeMenu(const char *reason) {
     }
 
     double contentX = 18.0;
-    double contentY = 16.0;
+    double contentY = 10.0;
     double contentWidth = wellFrame.size.width;
     double buttonWidth = contentWidth < 280.0 ? 92.0 : (panelWidth < 360.0 ? 118.0 : 136.0);
     double labelWidth = contentWidth - contentX * 2.0 - buttonWidth - 16.0;
@@ -485,13 +495,13 @@ void ShowBridgeMenu(const char *reason) {
         ((void (*)(id, SEL, id))objc_msgSend)(gBridgeMenuDisplayContentView, sel_registerName("addSubview:"), displayTitle);
     }
 
-    BridgeCGRect hudLabelFrame = { { contentX, contentY + 36.0 }, { labelWidth, 24.0 } };
+    BridgeCGRect hudLabelFrame = { { contentX, contentY + 30.0 }, { labelWidth, 24.0 } };
     id hudLabel = BridgeLabelWithFrame(hudLabelFrame, "HUD", 15.0, true, titleColor, 0, 1);
     if (hudLabel != nil && gBridgeMenuDisplayContentView != nil) {
         ((void (*)(id, SEL, id))objc_msgSend)(gBridgeMenuDisplayContentView, sel_registerName("addSubview:"), hudLabel);
     }
 
-    BridgeCGRect hudHintFrame = { { contentX, contentY + 59.0 }, { contentWidth - contentX * 2.0, 20.0 } };
+    BridgeCGRect hudHintFrame = { { contentX, contentY + 53.0 }, { contentWidth - contentX * 2.0, 20.0 } };
     id hudHint = BridgeLabelWithFrame(hudHintFrame, "插件状态图标层", 12.0, false, secondaryColor, 0, 1);
     if (hudHint != nil && gBridgeMenuDisplayContentView != nil) {
         ((void (*)(id, SEL, id))objc_msgSend)(gBridgeMenuDisplayContentView, sel_registerName("addSubview:"), hudHint);
@@ -507,20 +517,42 @@ void ShowBridgeMenu(const char *reason) {
         ((void (*)(id, SEL, id))objc_msgSend)(gBridgeMenuDisplayContentView, sel_registerName("addSubview:"), gBridgeHUDToggleButton);
     }
 
-    BridgeCGRect hudSprintLabelFrame = { { contentX, contentY + 92.0 }, { labelWidth, 24.0 } };
+    BridgeCGRect hudKeysLabelFrame = { { contentX, contentY + 78.0 }, { labelWidth, 24.0 } };
+    id hudKeysLabel = BridgeLabelWithFrame(hudKeysLabelFrame, "按键显示", 15.0, true, titleColor, 0, 1);
+    if (hudKeysLabel != nil && gBridgeMenuDisplayContentView != nil) {
+        ((void (*)(id, SEL, id))objc_msgSend)(gBridgeMenuDisplayContentView, sel_registerName("addSubview:"), hudKeysLabel);
+    }
+
+    BridgeCGRect hudKeysHintFrame = { { contentX, contentY + 101.0 }, { contentWidth - contentX * 2.0, 20.0 } };
+    id hudKeysHint = BridgeLabelWithFrame(hudKeysHintFrame, "显示 WASD、鼠标左右键和空格状态", 12.0, false, secondaryColor, 0, 1);
+    if (hudKeysHint != nil && gBridgeMenuDisplayContentView != nil) {
+        ((void (*)(id, SEL, id))objc_msgSend)(gBridgeMenuDisplayContentView, sel_registerName("addSubview:"), hudKeysHint);
+    }
+
+    BridgeCGRect hudKeysButtonFrame = {
+        { contentWidth - contentX - buttonWidth, contentY + 74.0 },
+        { buttonWidth, 34.0 }
+    };
+    gBridgeHUDKeystrokesButton = BridgeButtonWithFrame(hudKeysButtonFrame, "", titleColor, BridgeColorWithWhiteAlpha(1.0, 0.12));
+    if (gBridgeHUDKeystrokesButton != nil && gBridgeMenuDisplayContentView != nil) {
+        BridgeAttachButtonAction(gBridgeHUDKeystrokesButton, sel_registerName("bridgeHUDKeystrokesTapped:"));
+        ((void (*)(id, SEL, id))objc_msgSend)(gBridgeMenuDisplayContentView, sel_registerName("addSubview:"), gBridgeHUDKeystrokesButton);
+    }
+
+    BridgeCGRect hudSprintLabelFrame = { { contentX, contentY + 126.0 }, { labelWidth, 24.0 } };
     id hudSprintLabel = BridgeLabelWithFrame(hudSprintLabelFrame, "疾跑显示", 15.0, true, titleColor, 0, 1);
     if (hudSprintLabel != nil && gBridgeMenuDisplayContentView != nil) {
         ((void (*)(id, SEL, id))objc_msgSend)(gBridgeMenuDisplayContentView, sel_registerName("addSubview:"), hudSprintLabel);
     }
 
-    BridgeCGRect hudSprintHintFrame = { { contentX, contentY + 115.0 }, { contentWidth - contentX * 2.0, 20.0 } };
+    BridgeCGRect hudSprintHintFrame = { { contentX, contentY + 149.0 }, { contentWidth - contentX * 2.0, 20.0 } };
     id hudSprintHint = BridgeLabelWithFrame(hudSprintHintFrame, "用图标显示当前疾跑语义", 12.0, false, secondaryColor, 0, 1);
     if (hudSprintHint != nil && gBridgeMenuDisplayContentView != nil) {
         ((void (*)(id, SEL, id))objc_msgSend)(gBridgeMenuDisplayContentView, sel_registerName("addSubview:"), hudSprintHint);
     }
 
     BridgeCGRect hudSprintButtonFrame = {
-        { contentWidth - contentX - buttonWidth, contentY + 88.0 },
+        { contentWidth - contentX - buttonWidth, contentY + 122.0 },
         { buttonWidth, 34.0 }
     };
     gBridgeHUDSprintStatusButton = BridgeButtonWithFrame(hudSprintButtonFrame, "", titleColor, BridgeColorWithWhiteAlpha(1.0, 0.12));
@@ -529,20 +561,20 @@ void ShowBridgeMenu(const char *reason) {
         ((void (*)(id, SEL, id))objc_msgSend)(gBridgeMenuDisplayContentView, sel_registerName("addSubview:"), gBridgeHUDSprintStatusButton);
     }
 
-    BridgeCGRect hudSettingsLabelFrame = { { contentX, contentY + 136.0 }, { labelWidth, 24.0 } };
+    BridgeCGRect hudSettingsLabelFrame = { { contentX, contentY + 174.0 }, { labelWidth, 24.0 } };
     id hudSettingsLabel = BridgeLabelWithFrame(hudSettingsLabelFrame, "HUD设置", 15.0, true, titleColor, 0, 1);
     if (hudSettingsLabel != nil && gBridgeMenuDisplayContentView != nil) {
         ((void (*)(id, SEL, id))objc_msgSend)(gBridgeMenuDisplayContentView, sel_registerName("addSubview:"), hudSettingsLabel);
     }
 
-    BridgeCGRect hudSettingsHintFrame = { { contentX, contentY + 159.0 }, { contentWidth - contentX * 2.0, 20.0 } };
+    BridgeCGRect hudSettingsHintFrame = { { contentX, contentY + 197.0 }, { contentWidth - contentX * 2.0, 20.0 } };
     id hudSettingsHint = BridgeLabelWithFrame(hudSettingsHintFrame, "点击设置后隐藏菜单，在 HUD 中点击元素选中并调整", 12.0, false, secondaryColor, 0, 1);
     if (hudSettingsHint != nil && gBridgeMenuDisplayContentView != nil) {
         ((void (*)(id, SEL, id))objc_msgSend)(gBridgeMenuDisplayContentView, sel_registerName("addSubview:"), hudSettingsHint);
     }
 
     BridgeCGRect hudSettingsButtonFrame = {
-        { contentWidth - contentX - buttonWidth, contentY + 132.0 },
+        { contentWidth - contentX - buttonWidth, contentY + 170.0 },
         { buttonWidth, 34.0 }
     };
     gBridgeHUDSettingsButton = BridgeButtonWithFrame(hudSettingsButtonFrame, "", titleColor, BridgeColorWithRedGreenBlueAlpha(0.21, 0.64, 1.0, 0.32));
@@ -642,6 +674,7 @@ void HideBridgeMenu(const char *reason) {
     gBridgeMenuOverlayView = nil;
     gBridgeHUDToggleButton = nil;
     gBridgeHUDSprintStatusButton = nil;
+    gBridgeHUDKeystrokesButton = nil;
     gBridgeHUDSettingsButton = nil;
     gBridgeSprintModeButton = nil;
     gBridgeSprintKeyButton = nil;

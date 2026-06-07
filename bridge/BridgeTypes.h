@@ -55,4 +55,5 @@ typedef struct {
 typedef enum {
     BridgeHUDElementNone = 0,
     BridgeHUDElementSprintStatus = 1,
+    BridgeHUDElementKeystrokes = 2,
 } BridgeHUDElement;

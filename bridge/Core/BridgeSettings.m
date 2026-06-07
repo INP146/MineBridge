@@ -16,6 +16,10 @@ static NSString *BridgeSettingsHUDSprintStatusEnabledKey(void) {
     return @"minebridge.hud.sprintStatus.enabled";
 }
 
+static NSString *BridgeSettingsHUDKeystrokesEnabledKey(void) {
+    return @"minebridge.hud.keystrokes.enabled";
+}
+
 static NSString *BridgeSettingsHUDSprintXKey(void) {
     return @"minebridge.hud.sprintStatus.x";
 }
@@ -30,6 +34,22 @@ static NSString *BridgeSettingsHUDSprintSizeKey(void) {
 
 static NSString *BridgeSettingsHUDSprintAlphaKey(void) {
     return @"minebridge.hud.sprintStatus.alpha";
+}
+
+static NSString *BridgeSettingsHUDKeystrokesXKey(void) {
+    return @"minebridge.hud.keystrokes.x";
+}
+
+static NSString *BridgeSettingsHUDKeystrokesYKey(void) {
+    return @"minebridge.hud.keystrokes.y";
+}
+
+static NSString *BridgeSettingsHUDKeystrokesSizeKey(void) {
+    return @"minebridge.hud.keystrokes.size";
+}
+
+static NSString *BridgeSettingsHUDKeystrokesAlphaKey(void) {
+    return @"minebridge.hud.keystrokes.alpha";
 }
 
 static double BridgeClampDouble(double value, double minValue, double maxValue) {
@@ -48,10 +68,15 @@ void BridgeSettingsLoad(void) {
     NSString *keyCodeKey = BridgeSettingsSprintKeyCodeKey();
     NSString *hudEnabledKey = BridgeSettingsHUDEnabledKey();
     NSString *hudSprintStatusKey = BridgeSettingsHUDSprintStatusEnabledKey();
+    NSString *hudKeystrokesKey = BridgeSettingsHUDKeystrokesEnabledKey();
     NSString *hudSprintXKey = BridgeSettingsHUDSprintXKey();
     NSString *hudSprintYKey = BridgeSettingsHUDSprintYKey();
     NSString *hudSprintSizeKey = BridgeSettingsHUDSprintSizeKey();
     NSString *hudSprintAlphaKey = BridgeSettingsHUDSprintAlphaKey();
+    NSString *hudKeystrokesXKey = BridgeSettingsHUDKeystrokesXKey();
+    NSString *hudKeystrokesYKey = BridgeSettingsHUDKeystrokesYKey();
+    NSString *hudKeystrokesSizeKey = BridgeSettingsHUDKeystrokesSizeKey();
+    NSString *hudKeystrokesAlphaKey = BridgeSettingsHUDKeystrokesAlphaKey();
 
     if ([defaults objectForKey:modeKey] != nil) {
         NSInteger mode = [defaults integerForKey:modeKey];
@@ -73,6 +98,10 @@ void BridgeSettingsLoad(void) {
         gBridgeHUDSprintStatusEnabled = [defaults boolForKey:hudSprintStatusKey];
     }
 
+    if ([defaults objectForKey:hudKeystrokesKey] != nil) {
+        gBridgeHUDKeystrokesEnabled = [defaults boolForKey:hudKeystrokesKey];
+    }
+
     if ([defaults objectForKey:hudSprintXKey] != nil) {
         gBridgeHUDSprintX = BridgeClampDouble([defaults doubleForKey:hudSprintXKey], 0.0, 4096.0);
     }
@@ -86,15 +115,33 @@ void BridgeSettingsLoad(void) {
         gBridgeHUDSprintAlpha = BridgeClampDouble([defaults doubleForKey:hudSprintAlphaKey], 0.15, 1.0);
     }
 
-    BridgeLog("settings loaded sprintMode=%d sprintKey=%u hud=%d hudSprint=%d hudSprintLayout=(%.1f,%.1f %.1f %.2f)",
+    if ([defaults objectForKey:hudKeystrokesXKey] != nil) {
+        gBridgeHUDKeystrokesX = BridgeClampDouble([defaults doubleForKey:hudKeystrokesXKey], 0.0, 4096.0);
+    }
+    if ([defaults objectForKey:hudKeystrokesYKey] != nil) {
+        gBridgeHUDKeystrokesY = BridgeClampDouble([defaults doubleForKey:hudKeystrokesYKey], 0.0, 4096.0);
+    }
+    if ([defaults objectForKey:hudKeystrokesSizeKey] != nil) {
+        gBridgeHUDKeystrokesSize = BridgeClampDouble([defaults doubleForKey:hudKeystrokesSizeKey], 24.0, 96.0);
+    }
+    if ([defaults objectForKey:hudKeystrokesAlphaKey] != nil) {
+        gBridgeHUDKeystrokesAlpha = BridgeClampDouble([defaults doubleForKey:hudKeystrokesAlphaKey], 0.15, 1.0);
+    }
+
+    BridgeLog("settings loaded sprintMode=%d sprintKey=%u hud=%d hudSprint=%d hudKeys=%d hudSprintLayout=(%.1f,%.1f %.1f %.2f) hudKeysLayout=(%.1f,%.1f %.1f %.2f)",
               (int)gBridgeSprintMode,
               gBridgeSprintKeyCode,
               gBridgeHUDEnabled ? 1 : 0,
               gBridgeHUDSprintStatusEnabled ? 1 : 0,
+              gBridgeHUDKeystrokesEnabled ? 1 : 0,
               gBridgeHUDSprintX,
               gBridgeHUDSprintY,
               gBridgeHUDSprintSize,
-              gBridgeHUDSprintAlpha);
+              gBridgeHUDSprintAlpha,
+              gBridgeHUDKeystrokesX,
+              gBridgeHUDKeystrokesY,
+              gBridgeHUDKeystrokesSize,
+              gBridgeHUDKeystrokesAlpha);
 }
 
 void BridgeSettingsSaveHUDEnabled(bool enabled) {
@@ -111,6 +158,14 @@ void BridgeSettingsSaveHUDSprintStatusEnabled(bool enabled) {
     [defaults setBool:enabled forKey:BridgeSettingsHUDSprintStatusEnabledKey()];
     [defaults synchronize];
     BridgeLog("settings saved hudSprint=%d", enabled ? 1 : 0);
+}
+
+void BridgeSettingsSaveHUDKeystrokesEnabled(bool enabled) {
+    gBridgeHUDKeystrokesEnabled = enabled;
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setBool:enabled forKey:BridgeSettingsHUDKeystrokesEnabledKey()];
+    [defaults synchronize];
+    BridgeLog("settings saved hudKeys=%d", enabled ? 1 : 0);
 }
 
 void BridgeSettingsSaveHUDSprintLayout(double x, double y, double size, double alpha) {
@@ -132,8 +187,31 @@ void BridgeSettingsSaveHUDSprintLayout(double x, double y, double size, double a
               gBridgeHUDSprintAlpha);
 }
 
+void BridgeSettingsSaveHUDKeystrokesLayout(double x, double y, double size, double alpha) {
+    gBridgeHUDKeystrokesX = BridgeClampDouble(x, 0.0, 4096.0);
+    gBridgeHUDKeystrokesY = BridgeClampDouble(y, 0.0, 4096.0);
+    gBridgeHUDKeystrokesSize = BridgeClampDouble(size, 24.0, 96.0);
+    gBridgeHUDKeystrokesAlpha = BridgeClampDouble(alpha, 0.15, 1.0);
+
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setDouble:gBridgeHUDKeystrokesX forKey:BridgeSettingsHUDKeystrokesXKey()];
+    [defaults setDouble:gBridgeHUDKeystrokesY forKey:BridgeSettingsHUDKeystrokesYKey()];
+    [defaults setDouble:gBridgeHUDKeystrokesSize forKey:BridgeSettingsHUDKeystrokesSizeKey()];
+    [defaults setDouble:gBridgeHUDKeystrokesAlpha forKey:BridgeSettingsHUDKeystrokesAlphaKey()];
+    [defaults synchronize];
+    BridgeLog("settings saved hudKeysLayout=(%.1f,%.1f %.1f %.2f)",
+              gBridgeHUDKeystrokesX,
+              gBridgeHUDKeystrokesY,
+              gBridgeHUDKeystrokesSize,
+              gBridgeHUDKeystrokesAlpha);
+}
+
 void BridgeSettingsResetHUDSprintLayout(void) {
     BridgeSettingsSaveHUDSprintLayout(1620.0, 160.0, 90.0, 0.50);
+}
+
+void BridgeSettingsResetHUDKeystrokesLayout(void) {
+    BridgeSettingsSaveHUDKeystrokesLayout(1300.0, 600.0, 50.0, 1.0);
 }
 
 void BridgeSettingsSaveSprintMode(BridgeSprintMode mode) {

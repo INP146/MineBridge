@@ -10,12 +10,28 @@ typedef enum {
     BridgeHUDSprintStateSprint = 2,
 } BridgeHUDSprintState;
 
+typedef enum {
+    BridgeHUDKeystrokeW = 0,
+    BridgeHUDKeystrokeA = 1,
+    BridgeHUDKeystrokeS = 2,
+    BridgeHUDKeystrokeD = 3,
+    BridgeHUDKeystrokeLMB = 4,
+    BridgeHUDKeystrokeRMB = 5,
+    BridgeHUDKeystrokeSpace = 6,
+    BridgeHUDKeystrokeCount = 7,
+} BridgeHUDKeystroke;
+
 static id gBridgeHUDLayerView = nil;
 static id gBridgeHUDSprintImageView = nil;
 static BridgeHUDSprintState gBridgeHUDLastSprintState = -1;
 static id gBridgeHUDSprintImage = nil;
 static id gBridgeHUDSprintDisabledImage = nil;
 static id gBridgeHUDSprintPressedImage = nil;
+static id gBridgeHUDKeystrokesLayerView = nil;
+static id gBridgeHUDKeystrokeCellViews[BridgeHUDKeystrokeCount] = { nil };
+static id gBridgeHUDKeystrokeLabels[BridgeHUDKeystrokeCount] = { nil };
+static bool gBridgeHUDLastKeystrokeStates[BridgeHUDKeystrokeCount] = { false };
+static bool gBridgeHUDLastKeystrokeStatesValid = false;
 static id gBridgeHUDEditorHintView = nil;
 static id gBridgeHUDEditorHintLabel = nil;
 static dispatch_source_t gBridgeHUDEditorRepeatTimer = nil;
@@ -79,6 +95,68 @@ static BridgeHUDSprintState BridgeHUDCurrentSprintState(void) {
     return gPressedKeys[gBridgeSprintKeyCode] ? BridgeHUDSprintStatePressed : BridgeHUDSprintStateSprint;
 }
 
+static BridgeCGSize BridgeHUDKeystrokesContentSize(void) {
+    double unit = gBridgeHUDKeystrokesSize;
+    double gap = unit * 0.06;
+    double mouseHeight = unit;
+    double spaceHeight = unit * 0.84;
+    BridgeCGSize size = {
+        unit * 3.0 + gap * 2.0,
+        unit * 2.0 + mouseHeight + spaceHeight + gap * 3.0
+    };
+    return size;
+}
+
+static bool BridgeHUDKeystrokeIsPressed(BridgeHUDKeystroke keystroke) {
+    switch (keystroke) {
+        case BridgeHUDKeystrokeW: return gPressedKeys[0x1A];
+        case BridgeHUDKeystrokeA: return gPressedKeys[0x04];
+        case BridgeHUDKeystrokeS: return gPressedKeys[0x16];
+        case BridgeHUDKeystrokeD: return gPressedKeys[0x07];
+        case BridgeHUDKeystrokeLMB: return gMouseButtonStates[0];
+        case BridgeHUDKeystrokeRMB: return gMouseButtonStates[1];
+        case BridgeHUDKeystrokeSpace: return gPressedKeys[0x2C];
+        default: return false;
+    }
+}
+
+static const char *BridgeHUDKeystrokeTitle(BridgeHUDKeystroke keystroke) {
+    switch (keystroke) {
+        case BridgeHUDKeystrokeW: return "W";
+        case BridgeHUDKeystrokeA: return "A";
+        case BridgeHUDKeystrokeS: return "S";
+        case BridgeHUDKeystrokeD: return "D";
+        case BridgeHUDKeystrokeLMB: return "LMB";
+        case BridgeHUDKeystrokeRMB: return "RMB";
+        case BridgeHUDKeystrokeSpace: return "SPACE";
+        default: return "";
+    }
+}
+
+static BridgeCGRect BridgeHUDKeystrokeFrame(BridgeHUDKeystroke keystroke) {
+    double unit = gBridgeHUDKeystrokesSize;
+    double gap = unit * 0.06;
+    double totalWidth = unit * 3.0 + gap * 2.0;
+    double mouseHeight = unit;
+    double spaceHeight = unit * 0.84;
+    double mouseWidth = (totalWidth - gap) * 0.5;
+    double row0 = 0.0;
+    double row1 = unit + gap;
+    double row2 = row1 + unit + gap;
+    double row3 = row2 + mouseHeight + gap;
+
+    switch (keystroke) {
+        case BridgeHUDKeystrokeW: return (BridgeCGRect){ { unit + gap, row0 }, { unit, unit } };
+        case BridgeHUDKeystrokeA: return (BridgeCGRect){ { 0.0, row1 }, { unit, unit } };
+        case BridgeHUDKeystrokeS: return (BridgeCGRect){ { unit + gap, row1 }, { unit, unit } };
+        case BridgeHUDKeystrokeD: return (BridgeCGRect){ { (unit + gap) * 2.0, row1 }, { unit, unit } };
+        case BridgeHUDKeystrokeLMB: return (BridgeCGRect){ { 0.0, row2 }, { mouseWidth, mouseHeight } };
+        case BridgeHUDKeystrokeRMB: return (BridgeCGRect){ { mouseWidth + gap, row2 }, { mouseWidth, mouseHeight } };
+        case BridgeHUDKeystrokeSpace: return (BridgeCGRect){ { 0.0, row3 }, { totalWidth, spaceHeight } };
+        default: return (BridgeCGRect){ { 0.0, 0.0 }, { 0.0, 0.0 } };
+    }
+}
+
 static bool BridgeHUDEditorKeyIsRepeatable(unsigned short keyCode) {
     switch (keyCode) {
         case 0x4F:
@@ -134,12 +212,75 @@ static void BridgeHUDEditorClampSprintLayout(void) {
     }
 }
 
+static void BridgeHUDEditorClampKeystrokesLayout(void) {
+    if (gBridgeHUDKeystrokesSize < 24.0) {
+        gBridgeHUDKeystrokesSize = 24.0;
+    }
+    if (gBridgeHUDKeystrokesSize > 96.0) {
+        gBridgeHUDKeystrokesSize = 96.0;
+    }
+    if (gBridgeHUDKeystrokesAlpha < 0.15) {
+        gBridgeHUDKeystrokesAlpha = 0.15;
+    }
+    if (gBridgeHUDKeystrokesAlpha > 1.0) {
+        gBridgeHUDKeystrokesAlpha = 1.0;
+    }
+
+    BridgeCGSize contentSize = BridgeHUDKeystrokesContentSize();
+    id window = KeyWindow();
+    if (window != nil && RespondsTo(window, sel_registerName("bounds"))) {
+        BridgeCGRect bounds = ((BridgeCGRect (*)(id, SEL))objc_msgSend)(window, sel_registerName("bounds"));
+        if (contentSize.width > bounds.size.width && bounds.size.width > 0.0) {
+            double scale = bounds.size.width / contentSize.width;
+            gBridgeHUDKeystrokesSize *= scale;
+            contentSize = BridgeHUDKeystrokesContentSize();
+        }
+        if (contentSize.height > bounds.size.height && bounds.size.height > 0.0) {
+            double scale = bounds.size.height / contentSize.height;
+            gBridgeHUDKeystrokesSize *= scale;
+            contentSize = BridgeHUDKeystrokesContentSize();
+        }
+        if (gBridgeHUDKeystrokesX > bounds.size.width - contentSize.width) {
+            gBridgeHUDKeystrokesX = bounds.size.width - contentSize.width;
+        }
+        if (gBridgeHUDKeystrokesY > bounds.size.height - contentSize.height) {
+            gBridgeHUDKeystrokesY = bounds.size.height - contentSize.height;
+        }
+    }
+
+    if (gBridgeHUDKeystrokesSize < 24.0) {
+        gBridgeHUDKeystrokesSize = 24.0;
+    }
+    if (gBridgeHUDKeystrokesX < 0.0) {
+        gBridgeHUDKeystrokesX = 0.0;
+    }
+    if (gBridgeHUDKeystrokesY < 0.0) {
+        gBridgeHUDKeystrokesY = 0.0;
+    }
+}
+
 static void BridgeHUDEditorPersistSprintLayout(void) {
     BridgeHUDEditorClampSprintLayout();
     BridgeSettingsSaveHUDSprintLayout(gBridgeHUDSprintX,
                                       gBridgeHUDSprintY,
                                       gBridgeHUDSprintSize,
                                       gBridgeHUDSprintAlpha);
+}
+
+static void BridgeHUDEditorPersistKeystrokesLayout(void) {
+    BridgeHUDEditorClampKeystrokesLayout();
+    BridgeSettingsSaveHUDKeystrokesLayout(gBridgeHUDKeystrokesX,
+                                          gBridgeHUDKeystrokesY,
+                                          gBridgeHUDKeystrokesSize,
+                                          gBridgeHUDKeystrokesAlpha);
+}
+
+static void BridgeHUDEditorPersistSelectedLayout(void) {
+    if (gBridgeHUDSelectedElement == BridgeHUDElementSprintStatus) {
+        BridgeHUDEditorPersistSprintLayout();
+    } else if (gBridgeHUDSelectedElement == BridgeHUDElementKeystrokes) {
+        BridgeHUDEditorPersistKeystrokesLayout();
+    }
 }
 
 static void BridgeHUDEditorRemoveHint(void) {
@@ -157,6 +298,13 @@ static NSString *BridgeHUDEditorHintText(void) {
                 gBridgeHUDSprintY,
                 gBridgeHUDSprintSize,
                 gBridgeHUDSprintAlpha * 100.0];
+    }
+    if (gBridgeHUDSelectedElement == BridgeHUDElementKeystrokes) {
+        return [NSString stringWithFormat:@"HUD 设置\n已选：按键显示\n位置：x %.0f  y %.0f    大小：%.0f    透明：%.0f%%\n方向键移动，长按连续调整\n双击元素直接输入参数\n-/= 大小，,/. 透明，R 重置，Esc 完成",
+                gBridgeHUDKeystrokesX,
+                gBridgeHUDKeystrokesY,
+                gBridgeHUDKeystrokesSize,
+                gBridgeHUDKeystrokesAlpha * 100.0];
     }
 
     return @"HUD 设置\n点击 HUD 元素选中后调整\n双击元素直接输入参数\n方向键移动，长按连续调整\n-/= 大小，,/. 透明，R 重置，Esc 完成";
@@ -183,7 +331,7 @@ static void BridgeHUDEditorUpdateHint(void) {
         hintWidth = bounds.size.width > 24.0 ? bounds.size.width - 24.0 : bounds.size.width;
     }
 
-    double hintHeight = gBridgeHUDSelectedElement == BridgeHUDElementSprintStatus ? 136.0 : 112.0;
+    double hintHeight = gBridgeHUDSelectedElement == BridgeHUDElementNone ? 112.0 : 136.0;
     double hintX = 16.0;
     double hintY = bounds.size.height - hintHeight - 18.0;
     if (hintY < 12.0) {
@@ -242,16 +390,16 @@ static void BridgeHUDEditorUpdateHint(void) {
     }
 }
 
-static void BridgeHUDRefreshSelectionChrome(void) {
-    if (gBridgeHUDLayerView == nil) {
+static void BridgeHUDRefreshElementSelectionChrome(id view, BridgeHUDElement element, double cornerRadius) {
+    if (view == nil) {
         return;
     }
 
-    ((void (*)(id, SEL, BOOL))objc_msgSend)(gBridgeHUDLayerView,
+    ((void (*)(id, SEL, BOOL))objc_msgSend)(view,
                                             sel_registerName("setUserInteractionEnabled:"),
                                             gBridgeHUDEditorActive ? YES : NO);
 
-    id layer = ObjectValue(gBridgeHUDLayerView, "layer");
+    id layer = ObjectValue(view, "layer");
     if (layer == nil) {
         return;
     }
@@ -261,7 +409,7 @@ static void BridgeHUDRefreshSelectionChrome(void) {
         return;
     }
 
-    bool selected = gBridgeHUDSelectedElement == BridgeHUDElementSprintStatus;
+    bool selected = gBridgeHUDSelectedElement == element;
     id borderColor = selected ? BridgeColorWithRedGreenBlueAlpha(0.21, 0.64, 1.0, 1.0)
                               : BridgeColorWithWhiteAlpha(1.0, 0.34);
     void *cgColor = borderColor == nil ? NULL : PointerValue(borderColor, "CGColor");
@@ -269,7 +417,16 @@ static void BridgeHUDRefreshSelectionChrome(void) {
         ((void (*)(id, SEL, void *))objc_msgSend)(layer, sel_registerName("setBorderColor:"), cgColor);
     }
     ((void (*)(id, SEL, double))objc_msgSend)(layer, sel_registerName("setBorderWidth:"), selected ? 2.0 : 1.0);
-    ((void (*)(id, SEL, double))objc_msgSend)(layer, sel_registerName("setCornerRadius:"), gBridgeHUDSprintSize * 0.18);
+    ((void (*)(id, SEL, double))objc_msgSend)(layer, sel_registerName("setCornerRadius:"), cornerRadius);
+}
+
+static void BridgeHUDRefreshSelectionChrome(void) {
+    BridgeHUDRefreshElementSelectionChrome(gBridgeHUDLayerView,
+                                           BridgeHUDElementSprintStatus,
+                                           gBridgeHUDSprintSize * 0.18);
+    BridgeHUDRefreshElementSelectionChrome(gBridgeHUDKeystrokesLayerView,
+                                           BridgeHUDElementKeystrokes,
+                                           gBridgeHUDKeystrokesSize * 0.14);
 }
 
 static double BridgeHUDTextFieldDoubleValue(id textField, double fallback) {
@@ -424,6 +581,120 @@ static void BridgeHUDEditorShowSprintParameterPrompt(void) {
                                                     nil);
 }
 
+static void BridgeHUDEditorShowKeystrokesParameterPrompt(void) {
+    if (!gBridgeHUDEditorActive || gBridgeHUDParameterPromptActive) {
+        return;
+    }
+
+    Class alertClass = objc_getClass("UIAlertController");
+    Class actionClass = objc_getClass("UIAlertAction");
+    if (alertClass == Nil || actionClass == Nil) {
+        BridgeLog("hud editor keystrokes parameter prompt unavailable alert=%p action=%p", alertClass, actionClass);
+        return;
+    }
+
+    id presenter = BridgeHUDTopViewController();
+    if (presenter == nil || !RespondsTo(presenter, sel_registerName("presentViewController:animated:completion:"))) {
+        BridgeLog("hud editor keystrokes parameter prompt skipped presenter=%p", (__bridge void *)presenter);
+        return;
+    }
+
+    gBridgeHUDParameterPromptActive = true;
+    gBridgeHUDSelectedElement = BridgeHUDElementKeystrokes;
+    BridgeHUDRefreshSelectionChrome();
+    BridgeHUDEditorUpdateHint();
+
+    id alert = ((id (*)(id, SEL, id, id, long))objc_msgSend)((id)alertClass,
+                                                              sel_registerName("alertControllerWithTitle:message:preferredStyle:"),
+                                                              @"按键显示",
+                                                              @"输入 HUD 参数。透明度可填 50 或 0.5。",
+                                                              1L);
+    if (alert == nil) {
+        gBridgeHUDParameterPromptActive = false;
+        return;
+    }
+
+    __block id xField = nil;
+    __block id yField = nil;
+    __block id sizeField = nil;
+    __block id alphaField = nil;
+
+    void (^xConfig)(id) = ^(id textField) {
+        xField = textField;
+        BridgeHUDConfigureTextField(textField, @"x", [NSString stringWithFormat:@"%.0f", gBridgeHUDKeystrokesX]);
+    };
+    void (^yConfig)(id) = ^(id textField) {
+        yField = textField;
+        BridgeHUDConfigureTextField(textField, @"y", [NSString stringWithFormat:@"%.0f", gBridgeHUDKeystrokesY]);
+    };
+    void (^sizeConfig)(id) = ^(id textField) {
+        sizeField = textField;
+        BridgeHUDConfigureTextField(textField, @"大小", [NSString stringWithFormat:@"%.0f", gBridgeHUDKeystrokesSize]);
+    };
+    void (^alphaConfig)(id) = ^(id textField) {
+        alphaField = textField;
+        BridgeHUDConfigureTextField(textField, @"透明度 0-100 或 0-1", [NSString stringWithFormat:@"%.0f", gBridgeHUDKeystrokesAlpha * 100.0]);
+    };
+
+    SEL addTextFieldSel = sel_registerName("addTextFieldWithConfigurationHandler:");
+    if (RespondsTo(alert, addTextFieldSel)) {
+        ((void (*)(id, SEL, id))objc_msgSend)(alert, addTextFieldSel, xConfig);
+        ((void (*)(id, SEL, id))objc_msgSend)(alert, addTextFieldSel, yConfig);
+        ((void (*)(id, SEL, id))objc_msgSend)(alert, addTextFieldSel, sizeConfig);
+        ((void (*)(id, SEL, id))objc_msgSend)(alert, addTextFieldSel, alphaConfig);
+    }
+
+    id cancelAction = ((id (*)(id, SEL, id, long, id))objc_msgSend)((id)actionClass,
+                                                                    sel_registerName("actionWithTitle:style:handler:"),
+                                                                    @"取消",
+                                                                    1L,
+                                                                    ^(id action) {
+                                                                        (void)action;
+                                                                        gBridgeHUDParameterPromptActive = false;
+                                                                        BridgeHUDEditorUpdateHint();
+                                                                    });
+    id saveAction = ((id (*)(id, SEL, id, long, id))objc_msgSend)((id)actionClass,
+                                                                  sel_registerName("actionWithTitle:style:handler:"),
+                                                                  @"保存",
+                                                                  0L,
+                                                                  ^(id action) {
+                                                                      (void)action;
+                                                                      double x = BridgeHUDTextFieldDoubleValue(xField, gBridgeHUDKeystrokesX);
+                                                                      double y = BridgeHUDTextFieldDoubleValue(yField, gBridgeHUDKeystrokesY);
+                                                                      double size = BridgeHUDTextFieldDoubleValue(sizeField, gBridgeHUDKeystrokesSize);
+                                                                      double alpha = BridgeHUDTextFieldDoubleValue(alphaField, gBridgeHUDKeystrokesAlpha * 100.0);
+                                                                      if (alpha > 1.0) {
+                                                                          alpha *= 0.01;
+                                                                      }
+
+                                                                      gBridgeHUDKeystrokesX = x;
+                                                                      gBridgeHUDKeystrokesY = y;
+                                                                      gBridgeHUDKeystrokesSize = size;
+                                                                      gBridgeHUDKeystrokesAlpha = alpha;
+                                                                      BridgeHUDEditorPersistKeystrokesLayout();
+                                                                      BridgeHUDRefresh();
+                                                                      gBridgeHUDParameterPromptActive = false;
+                                                                      BridgeHUDEditorUpdateHint();
+                                                                      BridgeLog("hud editor parameter prompt saved keystrokes");
+                                                                  });
+
+    SEL addActionSel = sel_registerName("addAction:");
+    if (RespondsTo(alert, addActionSel)) {
+        if (cancelAction != nil) {
+            ((void (*)(id, SEL, id))objc_msgSend)(alert, addActionSel, cancelAction);
+        }
+        if (saveAction != nil) {
+            ((void (*)(id, SEL, id))objc_msgSend)(alert, addActionSel, saveAction);
+        }
+    }
+
+    ((void (*)(id, SEL, id, BOOL, id))objc_msgSend)(presenter,
+                                                    sel_registerName("presentViewController:animated:completion:"),
+                                                    alert,
+                                                    YES,
+                                                    nil);
+}
+
 static id BridgeHUDActionTarget(void);
 
 void BridgeHUDSprintTapped(id self, SEL _cmd, id sender) {
@@ -451,6 +722,31 @@ void BridgeHUDSprintDoubleTapped(id self, SEL _cmd, id sender) {
     BridgeHUDEditorShowSprintParameterPrompt();
 }
 
+void BridgeHUDKeystrokesTapped(id self, SEL _cmd, id sender) {
+    (void)self;
+    (void)_cmd;
+    (void)sender;
+    if (!gBridgeHUDEditorActive) {
+        return;
+    }
+    gBridgeHUDSelectedElement = BridgeHUDElementKeystrokes;
+    BridgeHUDRefreshSelectionChrome();
+    BridgeHUDEditorUpdateHint();
+    BridgeLog("hud editor selected element=keystrokes");
+}
+
+void BridgeHUDKeystrokesDoubleTapped(id self, SEL _cmd, id sender) {
+    (void)self;
+    (void)_cmd;
+    (void)sender;
+    if (!gBridgeHUDEditorActive) {
+        return;
+    }
+    BridgeHUDEditorStopRepeat(true);
+    gBridgeHUDSelectedElement = BridgeHUDElementKeystrokes;
+    BridgeHUDEditorShowKeystrokesParameterPrompt();
+}
+
 static id BridgeHUDActionTarget(void) {
     static id target = nil;
     if (target != nil) {
@@ -464,6 +760,8 @@ static id BridgeHUDActionTarget(void) {
         if (cls != Nil) {
             class_addMethod(cls, sel_registerName("bridgeHUDSprintTapped:"), (IMP)BridgeHUDSprintTapped, "v@:@");
             class_addMethod(cls, sel_registerName("bridgeHUDSprintDoubleTapped:"), (IMP)BridgeHUDSprintDoubleTapped, "v@:@");
+            class_addMethod(cls, sel_registerName("bridgeHUDKeystrokesTapped:"), (IMP)BridgeHUDKeystrokesTapped, "v@:@");
+            class_addMethod(cls, sel_registerName("bridgeHUDKeystrokesDoubleTapped:"), (IMP)BridgeHUDKeystrokesDoubleTapped, "v@:@");
             objc_registerClassPair(cls);
         }
     }
@@ -474,7 +772,7 @@ static id BridgeHUDActionTarget(void) {
     return target;
 }
 
-static void BridgeHUDInstallTapRecognizer(id view) {
+static void BridgeHUDInstallTapRecognizer(id view, SEL tapAction, SEL doubleTapAction) {
     if (view == nil) {
         return;
     }
@@ -492,7 +790,7 @@ static void BridgeHUDInstallTapRecognizer(id view) {
     doubleTap = ((id (*)(id, SEL, id, SEL))objc_msgSend)(doubleTap,
                                                          sel_registerName("initWithTarget:action:"),
                                                          target,
-                                                         sel_registerName("bridgeHUDSprintDoubleTapped:"));
+                                                         doubleTapAction);
     if (doubleTap != nil && RespondsTo(doubleTap, sel_registerName("setNumberOfTapsRequired:"))) {
         ((void (*)(id, SEL, unsigned long))objc_msgSend)(doubleTap, sel_registerName("setNumberOfTapsRequired:"), 2UL);
         ((void (*)(id, SEL, id))objc_msgSend)(view, sel_registerName("addGestureRecognizer:"), doubleTap);
@@ -503,7 +801,7 @@ static void BridgeHUDInstallTapRecognizer(id view) {
         tap = ((id (*)(id, SEL, id, SEL))objc_msgSend)(tap,
                                                        sel_registerName("initWithTarget:action:"),
                                                        target,
-                                                       sel_registerName("bridgeHUDSprintTapped:"));
+                                                       tapAction);
     }
     if (tap != nil) {
         if (doubleTap != nil && RespondsTo(tap, sel_registerName("requireGestureRecognizerToFail:"))) {
@@ -514,7 +812,7 @@ static void BridgeHUDInstallTapRecognizer(id view) {
 }
 
 static void BridgeHUDEditorApplyKey(unsigned short keyCode, bool repeat) {
-    if (gBridgeHUDSelectedElement != BridgeHUDElementSprintStatus) {
+    if (gBridgeHUDSelectedElement == BridgeHUDElementNone) {
         BridgeHUDEditorUpdateHint();
         return;
     }
@@ -522,36 +820,44 @@ static void BridgeHUDEditorApplyKey(unsigned short keyCode, bool repeat) {
     double moveStep = repeat ? 4.0 : 2.0;
     double sizeStep = repeat ? 3.0 : 2.0;
     double alphaStep = repeat ? 0.03 : 0.05;
+    double *x = gBridgeHUDSelectedElement == BridgeHUDElementSprintStatus ? &gBridgeHUDSprintX : &gBridgeHUDKeystrokesX;
+    double *y = gBridgeHUDSelectedElement == BridgeHUDElementSprintStatus ? &gBridgeHUDSprintY : &gBridgeHUDKeystrokesY;
+    double *size = gBridgeHUDSelectedElement == BridgeHUDElementSprintStatus ? &gBridgeHUDSprintSize : &gBridgeHUDKeystrokesSize;
+    double *alpha = gBridgeHUDSelectedElement == BridgeHUDElementSprintStatus ? &gBridgeHUDSprintAlpha : &gBridgeHUDKeystrokesAlpha;
     switch (keyCode) {
         case 0x4F:
-            gBridgeHUDSprintX += moveStep;
+            *x += moveStep;
             break;
         case 0x50:
-            gBridgeHUDSprintX -= moveStep;
+            *x -= moveStep;
             break;
         case 0x51:
-            gBridgeHUDSprintY += moveStep;
+            *y += moveStep;
             break;
         case 0x52:
-            gBridgeHUDSprintY -= moveStep;
+            *y -= moveStep;
             break;
         case 0x2E:
-            gBridgeHUDSprintSize += sizeStep;
+            *size += sizeStep;
             break;
         case 0x2D:
-            gBridgeHUDSprintSize -= sizeStep;
+            *size -= sizeStep;
             break;
         case 0x37:
-            gBridgeHUDSprintAlpha += alphaStep;
+            *alpha += alphaStep;
             break;
         case 0x36:
-            gBridgeHUDSprintAlpha -= alphaStep;
+            *alpha -= alphaStep;
             break;
         default:
             return;
     }
 
-    BridgeHUDEditorClampSprintLayout();
+    if (gBridgeHUDSelectedElement == BridgeHUDElementSprintStatus) {
+        BridgeHUDEditorClampSprintLayout();
+    } else {
+        BridgeHUDEditorClampKeystrokesLayout();
+    }
     BridgeHUDRefresh();
     BridgeHUDEditorUpdateHint();
 }
@@ -562,8 +868,8 @@ static void BridgeHUDEditorStopRepeat(bool persist) {
         gBridgeHUDEditorRepeatTimer = nil;
     }
     gBridgeHUDEditorRepeatKeyCode = 0;
-    if (persist && gBridgeHUDSelectedElement == BridgeHUDElementSprintStatus) {
-        BridgeHUDEditorPersistSprintLayout();
+    if (persist) {
+        BridgeHUDEditorPersistSelectedLayout();
     }
 }
 
@@ -606,6 +912,9 @@ void BridgeHUDEditorBegin(bool returnToMenuOnEnd, bool restoreMouseLookOnEnd) {
     }
     if (!gBridgeHUDSprintStatusEnabled) {
         BridgeSettingsSaveHUDSprintStatusEnabled(true);
+    }
+    if (!gBridgeHUDKeystrokesEnabled) {
+        BridgeSettingsSaveHUDKeystrokesEnabled(true);
     }
 
     gPointerLockInhibited = true;
@@ -686,15 +995,18 @@ bool BridgeHUDEditorHandleKeyDown(unsigned short keyCode) {
     if (keyCode == 0x15) {
         if (gBridgeHUDSelectedElement == BridgeHUDElementSprintStatus) {
             BridgeSettingsResetHUDSprintLayout();
+        } else if (gBridgeHUDSelectedElement == BridgeHUDElementKeystrokes) {
+            BridgeSettingsResetHUDKeystrokesLayout();
             BridgeHUDRefresh();
         }
+        BridgeHUDRefresh();
         BridgeHUDEditorUpdateHint();
         return true;
     }
 
     if (BridgeHUDEditorKeyIsRepeatable(keyCode)) {
         BridgeHUDEditorApplyKey(keyCode, false);
-        BridgeHUDEditorPersistSprintLayout();
+        BridgeHUDEditorPersistSelectedLayout();
         BridgeHUDEditorStartRepeat(keyCode);
     }
     return true;
@@ -706,7 +1018,7 @@ void BridgeHUDEditorHandleKeyUp(unsigned short keyCode) {
     }
 }
 
-static void BridgeHUDRemove(void) {
+static void BridgeHUDRemoveSprint(void) {
     if (gBridgeHUDLayerView != nil && RespondsTo(gBridgeHUDLayerView, sel_registerName("removeFromSuperview"))) {
         ((void (*)(id, SEL))objc_msgSend)(gBridgeHUDLayerView, sel_registerName("removeFromSuperview"));
     }
@@ -715,14 +1027,32 @@ static void BridgeHUDRemove(void) {
     gBridgeHUDLastSprintState = -1;
 }
 
-static bool BridgeHUDEnsure(id window) {
+static void BridgeHUDRemoveKeystrokes(void) {
+    if (gBridgeHUDKeystrokesLayerView != nil && RespondsTo(gBridgeHUDKeystrokesLayerView, sel_registerName("removeFromSuperview"))) {
+        ((void (*)(id, SEL))objc_msgSend)(gBridgeHUDKeystrokesLayerView, sel_registerName("removeFromSuperview"));
+    }
+    gBridgeHUDKeystrokesLayerView = nil;
+    for (int i = 0; i < BridgeHUDKeystrokeCount; i++) {
+        gBridgeHUDKeystrokeCellViews[i] = nil;
+        gBridgeHUDKeystrokeLabels[i] = nil;
+        gBridgeHUDLastKeystrokeStates[i] = false;
+    }
+    gBridgeHUDLastKeystrokeStatesValid = false;
+}
+
+static void BridgeHUDRemove(void) {
+    BridgeHUDRemoveSprint();
+    BridgeHUDRemoveKeystrokes();
+}
+
+static bool BridgeHUDEnsureSprint(id window) {
     if (window == nil) {
         return false;
     }
 
     id superview = ObjectValue(gBridgeHUDLayerView, "superview");
     if (gBridgeHUDLayerView != nil && superview != nil && superview != window) {
-        BridgeHUDRemove();
+        BridgeHUDRemoveSprint();
     }
     if (gBridgeHUDLayerView != nil && gBridgeHUDSprintImageView != nil) {
         BridgeCGRect hudFrame = { { gBridgeHUDSprintX, gBridgeHUDSprintY }, { gBridgeHUDSprintSize, gBridgeHUDSprintSize } };
@@ -760,7 +1090,9 @@ static bool BridgeHUDEnsure(id window) {
     }
     ((void (*)(id, SEL, long))objc_msgSend)(imageView, sel_registerName("setContentMode:"), 1L);
     ((void (*)(id, SEL, id))objc_msgSend)(layer, sel_registerName("addSubview:"), imageView);
-    BridgeHUDInstallTapRecognizer(layer);
+    BridgeHUDInstallTapRecognizer(layer,
+                                  sel_registerName("bridgeHUDSprintTapped:"),
+                                  sel_registerName("bridgeHUDSprintDoubleTapped:"));
     ((void (*)(id, SEL, id))objc_msgSend)(window, sel_registerName("addSubview:"), layer);
 
     gBridgeHUDLayerView = layer;
@@ -769,8 +1101,157 @@ static bool BridgeHUDEnsure(id window) {
     return true;
 }
 
+static void BridgeHUDStyleKeystrokeCell(BridgeHUDKeystroke keystroke, bool pressed) {
+    id cell = gBridgeHUDKeystrokeCellViews[keystroke];
+    id label = gBridgeHUDKeystrokeLabels[keystroke];
+    if (cell == nil) {
+        return;
+    }
+
+    id backgroundColor = pressed ? BridgeColorWithRedGreenBlueAlpha(0.21, 0.64, 1.0, 0.86)
+                                 : BridgeColorWithWhiteAlpha(0.0, 0.48);
+    id borderColor = pressed ? BridgeColorWithRedGreenBlueAlpha(0.58, 0.83, 1.0, 0.96)
+                             : BridgeColorWithWhiteAlpha(1.0, 0.24);
+    id textColor = pressed ? BridgeColorWithWhiteAlpha(1.0, 1.0)
+                           : BridgeColorWithWhiteAlpha(1.0, 0.78);
+    if (backgroundColor != nil) {
+        ((void (*)(id, SEL, id))objc_msgSend)(cell, sel_registerName("setBackgroundColor:"), backgroundColor);
+    }
+    id layer = ObjectValue(cell, "layer");
+    if (layer != nil) {
+        ((void (*)(id, SEL, double))objc_msgSend)(layer, sel_registerName("setCornerRadius:"), gBridgeHUDKeystrokesSize * 0.14);
+        ((void (*)(id, SEL, BOOL))objc_msgSend)(layer, sel_registerName("setMasksToBounds:"), YES);
+        ((void (*)(id, SEL, double))objc_msgSend)(layer, sel_registerName("setBorderWidth:"), pressed ? 1.5 : 1.0);
+        void *cgColor = borderColor == nil ? NULL : PointerValue(borderColor, "CGColor");
+        if (cgColor != NULL) {
+            ((void (*)(id, SEL, void *))objc_msgSend)(layer, sel_registerName("setBorderColor:"), cgColor);
+        }
+    }
+    if (label != nil && textColor != nil) {
+        ((void (*)(id, SEL, id))objc_msgSend)(label, sel_registerName("setTextColor:"), textColor);
+    }
+}
+
+static void BridgeHUDLayoutKeystrokes(void) {
+    double unit = gBridgeHUDKeystrokesSize;
+    for (int i = 0; i < BridgeHUDKeystrokeCount; i++) {
+        BridgeHUDKeystroke keystroke = (BridgeHUDKeystroke)i;
+        BridgeCGRect frame = BridgeHUDKeystrokeFrame(keystroke);
+        id cell = gBridgeHUDKeystrokeCellViews[i];
+        id label = gBridgeHUDKeystrokeLabels[i];
+        if (cell != nil) {
+            ((void (*)(id, SEL, BridgeCGRect))objc_msgSend)(cell, sel_registerName("setFrame:"), frame);
+        }
+        if (label != nil) {
+            BridgeCGRect labelFrame = { { 2.0, 0.0 }, { frame.size.width - 4.0, frame.size.height } };
+            ((void (*)(id, SEL, BridgeCGRect))objc_msgSend)(label, sel_registerName("setFrame:"), labelFrame);
+            id font = BridgeFont(unit * 0.42, false);
+            if (font != nil) {
+                ((void (*)(id, SEL, id))objc_msgSend)(label, sel_registerName("setFont:"), font);
+            }
+        }
+        BridgeHUDStyleKeystrokeCell(keystroke, BridgeHUDKeystrokeIsPressed(keystroke));
+    }
+}
+
+static id BridgeHUDCreateKeystrokeCell(BridgeHUDKeystroke keystroke) {
+    BridgeCGRect frame = BridgeHUDKeystrokeFrame(keystroke);
+    id cell = BridgeViewWithFrame(frame);
+    if (cell == nil) {
+        return nil;
+    }
+
+    ((void (*)(id, SEL, BOOL))objc_msgSend)(cell, sel_registerName("setUserInteractionEnabled:"), NO);
+    BridgeCGRect labelFrame = { { 2.0, 0.0 }, { frame.size.width - 4.0, frame.size.height } };
+    id label = BridgeLabelWithFrame(labelFrame,
+                                    BridgeHUDKeystrokeTitle(keystroke),
+                                    gBridgeHUDKeystrokesSize * 0.42,
+                                    false,
+                                    BridgeColorWithWhiteAlpha(1.0, 0.78),
+                                    1,
+                                    1);
+    if (label != nil) {
+        if (RespondsTo(label, sel_registerName("setAdjustsFontSizeToFitWidth:"))) {
+            ((void (*)(id, SEL, BOOL))objc_msgSend)(label, sel_registerName("setAdjustsFontSizeToFitWidth:"), YES);
+        }
+        if (RespondsTo(label, sel_registerName("setMinimumScaleFactor:"))) {
+            ((void (*)(id, SEL, double))objc_msgSend)(label, sel_registerName("setMinimumScaleFactor:"), 0.55);
+        }
+        ((void (*)(id, SEL, id))objc_msgSend)(cell, sel_registerName("addSubview:"), label);
+    }
+
+    gBridgeHUDKeystrokeCellViews[keystroke] = cell;
+    gBridgeHUDKeystrokeLabels[keystroke] = label;
+    BridgeHUDStyleKeystrokeCell(keystroke, BridgeHUDKeystrokeIsPressed(keystroke));
+    return cell;
+}
+
+static bool BridgeHUDEnsureKeystrokes(id window) {
+    if (window == nil) {
+        return false;
+    }
+
+    id superview = ObjectValue(gBridgeHUDKeystrokesLayerView, "superview");
+    if (gBridgeHUDKeystrokesLayerView != nil && superview != nil && superview != window) {
+        BridgeHUDRemoveKeystrokes();
+    }
+
+    BridgeCGSize contentSize = BridgeHUDKeystrokesContentSize();
+    BridgeCGRect hudFrame = { { gBridgeHUDKeystrokesX, gBridgeHUDKeystrokesY }, { contentSize.width, contentSize.height } };
+    if (gBridgeHUDKeystrokesLayerView != nil) {
+        ((void (*)(id, SEL, BridgeCGRect))objc_msgSend)(gBridgeHUDKeystrokesLayerView, sel_registerName("setFrame:"), hudFrame);
+        ((void (*)(id, SEL, double))objc_msgSend)(gBridgeHUDKeystrokesLayerView, sel_registerName("setAlpha:"), gBridgeHUDKeystrokesAlpha);
+        BridgeHUDLayoutKeystrokes();
+        BridgeHUDRefreshSelectionChrome();
+        return true;
+    }
+
+    id layer = BridgeViewWithFrame(hudFrame);
+    if (layer == nil) {
+        return false;
+    }
+    ((void (*)(id, SEL, BOOL))objc_msgSend)(layer,
+                                            sel_registerName("setUserInteractionEnabled:"),
+                                            gBridgeHUDEditorActive ? YES : NO);
+    ((void (*)(id, SEL, unsigned long))objc_msgSend)(layer, sel_registerName("setAutoresizingMask:"), 36UL);
+    ((void (*)(id, SEL, double))objc_msgSend)(layer, sel_registerName("setAlpha:"), gBridgeHUDKeystrokesAlpha);
+
+    for (int i = 0; i < BridgeHUDKeystrokeCount; i++) {
+        id cell = BridgeHUDCreateKeystrokeCell((BridgeHUDKeystroke)i);
+        if (cell != nil) {
+            ((void (*)(id, SEL, id))objc_msgSend)(layer, sel_registerName("addSubview:"), cell);
+        }
+    }
+
+    BridgeHUDInstallTapRecognizer(layer,
+                                  sel_registerName("bridgeHUDKeystrokesTapped:"),
+                                  sel_registerName("bridgeHUDKeystrokesDoubleTapped:"));
+    ((void (*)(id, SEL, id))objc_msgSend)(window, sel_registerName("addSubview:"), layer);
+
+    gBridgeHUDKeystrokesLayerView = layer;
+    gBridgeHUDLastKeystrokeStatesValid = false;
+    BridgeHUDLayoutKeystrokes();
+    BridgeHUDRefreshSelectionChrome();
+    return true;
+}
+
+static void BridgeHUDRefreshKeystrokeStates(void) {
+    if (gBridgeHUDKeystrokesLayerView == nil) {
+        return;
+    }
+
+    for (int i = 0; i < BridgeHUDKeystrokeCount; i++) {
+        bool pressed = BridgeHUDKeystrokeIsPressed((BridgeHUDKeystroke)i);
+        if (!gBridgeHUDLastKeystrokeStatesValid || pressed != gBridgeHUDLastKeystrokeStates[i]) {
+            BridgeHUDStyleKeystrokeCell((BridgeHUDKeystroke)i, pressed);
+            gBridgeHUDLastKeystrokeStates[i] = pressed;
+        }
+    }
+    gBridgeHUDLastKeystrokeStatesValid = true;
+}
+
 void BridgeHUDRefresh(void) {
-    if (!gBridgeHUDEnabled || !gBridgeHUDSprintStatusEnabled || (gBridgeMenuVisible && !gBridgeHUDEditorActive)) {
+    if (!gBridgeHUDEnabled || (gBridgeMenuVisible && !gBridgeHUDEditorActive)) {
         if (!gBridgeHUDEditorActive) {
             BridgeHUDEditorRemoveHint();
         }
@@ -779,24 +1260,46 @@ void BridgeHUDRefresh(void) {
     }
 
     id window = KeyWindow();
-    if (!BridgeHUDEnsure(window)) {
-        return;
-    }
-    if (RespondsTo(window, sel_registerName("bringSubviewToFront:"))) {
-        ((void (*)(id, SEL, id))objc_msgSend)(window, sel_registerName("bringSubviewToFront:"), gBridgeHUDLayerView);
+    bool anyElementVisible = false;
+
+    if (gBridgeHUDSprintStatusEnabled) {
+        if (BridgeHUDEnsureSprint(window)) {
+            anyElementVisible = true;
+            if (RespondsTo(window, sel_registerName("bringSubviewToFront:"))) {
+                ((void (*)(id, SEL, id))objc_msgSend)(window, sel_registerName("bringSubviewToFront:"), gBridgeHUDLayerView);
+            }
+
+            BridgeHUDSprintState state = BridgeHUDCurrentSprintState();
+            id image = BridgeHUDImageForSprintState(state);
+            if (image == nil) {
+                BridgeHUDRemoveSprint();
+                BridgeLog("hud sprint image unavailable state=%d", (int)state);
+            } else if (state != gBridgeHUDLastSprintState) {
+                ((void (*)(id, SEL, id))objc_msgSend)(gBridgeHUDSprintImageView, sel_registerName("setImage:"), image);
+                gBridgeHUDLastSprintState = state;
+            }
+        }
+    } else {
+        BridgeHUDRemoveSprint();
     }
 
-    BridgeHUDSprintState state = BridgeHUDCurrentSprintState();
-    id image = BridgeHUDImageForSprintState(state);
-    if (image == nil) {
-        BridgeHUDRemove();
-        BridgeLog("hud sprint image unavailable state=%d", (int)state);
+    if (gBridgeHUDKeystrokesEnabled) {
+        if (BridgeHUDEnsureKeystrokes(window)) {
+            anyElementVisible = true;
+            BridgeHUDRefreshKeystrokeStates();
+            if (RespondsTo(window, sel_registerName("bringSubviewToFront:"))) {
+                ((void (*)(id, SEL, id))objc_msgSend)(window, sel_registerName("bringSubviewToFront:"), gBridgeHUDKeystrokesLayerView);
+            }
+        }
+    } else {
+        BridgeHUDRemoveKeystrokes();
+    }
+
+    if (!anyElementVisible && !gBridgeHUDEditorActive) {
+        BridgeHUDEditorRemoveHint();
         return;
     }
-    if (state != gBridgeHUDLastSprintState) {
-        ((void (*)(id, SEL, id))objc_msgSend)(gBridgeHUDSprintImageView, sel_registerName("setImage:"), image);
-        gBridgeHUDLastSprintState = state;
-    }
+
     BridgeHUDRefreshSelectionChrome();
     BridgeHUDEditorUpdateHint();
 }

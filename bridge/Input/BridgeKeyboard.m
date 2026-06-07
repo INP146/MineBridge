@@ -2,6 +2,25 @@
 
 static bool gNativeKeyChangedMediatedLogged = false;
 
+static bool BridgeHUDKeyCodeAffectsKeystrokes(unsigned short keyCode) {
+    switch (keyCode) {
+        case 0x04:
+        case 0x07:
+        case 0x16:
+        case 0x1A:
+        case 0x2C:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static void BridgeHUDRefreshForKeyIfNeeded(unsigned short keyCode) {
+    if (keyCode == gBridgeSprintKeyCode || (gBridgeHUDKeystrokesEnabled && BridgeHUDKeyCodeAffectsKeystrokes(keyCode))) {
+        BridgeHUDRefresh();
+    }
+}
+
 id ButtonForKeyCode(unsigned short keyCode) {
     if (gKeyboardInput == nil) {
         return nil;
@@ -189,9 +208,7 @@ void ReleaseKeyCode(unsigned short keyCode, const char *reason) {
     if (!suppressed) {
         SendKeyCode(keyCode, NO);
     }
-    if (keyCode == gBridgeSprintKeyCode) {
-        BridgeHUDRefresh();
-    }
+    BridgeHUDRefreshForKeyIfNeeded(keyCode);
 }
 
 bool BridgeSprintCanApplyToGame(const char *reason) {
@@ -444,9 +461,7 @@ void PressKeyCode(unsigned short keyCode) {
     AddActiveKeyCode(keyCode);
     StartKeyPollerIfNeeded();
     SendKeyCode(keyCode, YES);
-    if (keyCode == gBridgeSprintKeyCode) {
-        BridgeHUDRefresh();
-    }
+    BridgeHUDRefreshForKeyIfNeeded(keyCode);
 
     if (IsFunctionKey(keyCode)) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 250 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
@@ -466,6 +481,7 @@ void ReleaseAllKeys(void) {
         memset(gSuppressedKeys, 0, sizeof(gSuppressedKeys));
         memset(gMenuSuppressedKeys, 0, sizeof(gMenuSuppressedKeys));
         gActiveKeyCount = 0;
+        BridgeHUDRefresh();
         return;
     }
 
