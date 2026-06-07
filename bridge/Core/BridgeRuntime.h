@@ -2,7 +2,6 @@
 
 #import "../BridgeTypes.h"
 
-extern const char *kLogPath;
 extern const char *kControllerClassName;
 extern const char *kTargetGameVersion;
 extern const char *kPluginVersion;

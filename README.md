@@ -75,7 +75,7 @@ platform + 0x412
 仓库里已经包含可直接使用的 `dist/minebridge.dylib`。只有修改源码或需要 verbose trace 版本时才需要重新构建：
 
 ```sh
-./scripts/build.sh
+make
 ```
 
 输出文件：
@@ -87,10 +87,26 @@ dist/minebridge.dylib
 verbose trace 构建：
 
 ```sh
-./scripts/build.sh --verbose
+make verbose
 ```
 
-构建脚本使用 `arm64-apple-ios14.0-macabi` target，并对 dylib 做 ad-hoc 签名。
+临时输出路径：
+
+```sh
+make OUT=/tmp/minebridge-test.dylib
+```
+
+`OUT` 路径不能包含空白字符；这是 Make target 路径的限制。
+
+兼容旧流程的脚本仍然可用：
+
+```sh
+./scripts/build.sh
+./scripts/build.sh --verbose
+./scripts/build.sh --output /tmp/minebridge-test.dylib
+```
+
+构建系统使用 `arm64-apple-ios14.0-macabi` target，目标产物会做 ad-hoc 签名。对象文件和 depfile 存放在 `build/` 下，`make clean` 会清理这些中间文件。
 
 ## 仓库结构
 

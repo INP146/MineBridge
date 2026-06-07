@@ -1,7 +1,9 @@
 #import "../BridgeInternal.h"
 
-const char *kLogPath =
-    "/Users/user/Library/Containers/io.playcover.PlayCover/minebridge.log";
+#import <limits.h>
+#import <pwd.h>
+#import <stdlib.h>
+
 const char *kControllerClassName = "minecraftpeViewControllerImpl";
 const char *kTargetGameVersion = "26.21";
 const char *kPluginVersion = "0.2";
@@ -119,8 +121,34 @@ unsigned short gBridgeSprintKeyCode = 0xE0;
 bool gBridgeSprintToggleDesired = false;
 bool gBridgeSprintToggleHeldInGame = false;
 bool gSuppressOriginalPressesBegan = false;
+
+static const char *BridgeLogPath(void) {
+  static char logPath[PATH_MAX];
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    const char *home = NULL;
+    struct passwd *passwd = getpwuid(getuid());
+    if (passwd != NULL && passwd->pw_dir != NULL &&
+        passwd->pw_dir[0] != '\0') {
+      home = passwd->pw_dir;
+    }
+    if (home == NULL || home[0] == '\0') {
+      home = getenv("HOME");
+    }
+    if (home == NULL || home[0] == '\0') {
+      snprintf(logPath, sizeof(logPath), "/tmp/minebridge.log");
+      return;
+    }
+
+    snprintf(logPath, sizeof(logPath),
+             "%s/Library/Containers/io.playcover.PlayCover/minebridge.log",
+             home);
+  });
+  return logPath;
+}
+
 void BridgeVLog(const char *format, va_list args) {
-  FILE *file = fopen(kLogPath, "a");
+  FILE *file = fopen(BridgeLogPath(), "a");
   if (file == NULL) {
     return;
   }

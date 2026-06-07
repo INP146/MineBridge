@@ -15,19 +15,6 @@ EOF
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-SOURCES=(
-  "$ROOT_DIR/bridge/BridgeMain.m"
-  "$ROOT_DIR/bridge/Core/BridgeState.m"
-  "$ROOT_DIR/bridge/Core/BridgeSettings.m"
-  "$ROOT_DIR/bridge/Core/BridgeHooks.m"
-  "$ROOT_DIR/bridge/Input/BridgeConnection.m"
-  "$ROOT_DIR/bridge/Input/BridgeKeyboard.m"
-  "$ROOT_DIR/bridge/Input/BridgeMouse.m"
-  "$ROOT_DIR/bridge/Pointer/BridgePointer.m"
-  "$ROOT_DIR/bridge/UI/BridgeHUD.m"
-  "$ROOT_DIR/bridge/UI/BridgeMenu.m"
-  "$ROOT_DIR/bridge/Controller/BridgeControllerHooks.m"
-)
 OUT="$ROOT_DIR/dist/minebridge.dylib"
 VERBOSE=0
 CLEAN=0
@@ -59,35 +46,15 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-for source in "${SOURCES[@]}"; do
-  if [[ ! -f "$source" ]]; then
-    echo "Source not found: $source" >&2
-    exit 1
-  fi
-done
+if [[ "$OUT" == *[[:space:]]* ]]; then
+  echo "Output path cannot contain whitespace: $OUT" >&2
+  exit 2
+fi
 
-mkdir -p "$(dirname "$OUT")"
 if [[ "$CLEAN" -eq 1 ]]; then
-  rm -f "$OUT"
+  make -s --no-print-directory -C "$ROOT_DIR" OUT="$OUT" clean-dist
 fi
 
-SDK="$(xcrun --sdk macosx --show-sdk-path)"
-FLAGS=(
-  -target arm64-apple-ios14.0-macabi
-  -isysroot "$SDK"
-  -fobjc-arc
-  -fblocks
-  -fvisibility=hidden
-  -dynamiclib "${SOURCES[@]}"
-  -o "$OUT"
-  -framework Foundation
-)
-
-if [[ "$VERBOSE" -eq 1 ]]; then
-  FLAGS+=(-DMC_KEYBOARD_BRIDGE_VERBOSE=1)
-fi
-
-xcrun --sdk macosx clang "${FLAGS[@]}"
-codesign --force --sign - "$OUT" >/dev/null
+make -s --no-print-directory -C "$ROOT_DIR" OUT="$OUT" VERBOSE="$VERBOSE" all
 
 echo "$OUT"
