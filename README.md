@@ -1,5 +1,8 @@
 # MineBridge
 
+> [!IMPORTANT]
+> 刚发布完 v26.21.0.2 就发现原生键鼠用不了是因为 PlayCover 的 Keymapping 没关闭，两眼一黑，仓库留在这做个教训下次不要动不动就开搞😇
+
 MineBridge 是一个用于 PlayCover 版 Minecraft 的热注入输入桥。它把一个 dylib 注入到正在运行的游戏进程里，将 macOS 的键盘和鼠标输入接入 Minecraft 现有的 iOS / GameController 输入链路。
 
 ## 功能
